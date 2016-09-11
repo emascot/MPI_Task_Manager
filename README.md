@@ -7,9 +7,9 @@ Adapted from [https://github.com/robevans/MPI/](https://github.com/robevans/MPI/
 
 |Method      |Description|
 |------------|-----------|
-|task_manager|Sends tasks to farm or divide depending on # processes and outputs results to file|
-|task_farm   |Uses process 0 as master who assigns tasks to and receives results from other processes|
-|task_divide |Divides tasks evenly by mod(task #, size)=rank|
+|task_manager|Main driver|
+|task_farm   |Uses process 0 to distribute tasks as processes finish tasks|
+|task_divide |Initially divide tasks evenly by mod(task #, size)=rank|
 
 #### Fortran
 
@@ -34,36 +34,27 @@ mpirun -n X ./example.x
 
 ```fortran
 program example
+  use parallel_tasks
   use mpi
   implicit none
-  integer, parameter :: Ntasks=10, Nfun=2, Nres=2, dp=kind(0.d0)
-  integer :: rank, ierr
+  integer, parameter :: Ntasks=1000, Nfun=2, Nres=2, dp=kind(0.d0)
+  integer :: i, rank, ierr
   real(dp) :: tasks(Nfun,Ntasks), results(Nres,Ntasks), output(Nfun+Nres,Ntasks)
 
-  interface task_manager
-    subroutine task_manager(tasks,Ntasks,Nfun,Nres,func,results,ierr,fname)
-      integer, parameter :: dp=kind(0.d0)
-      integer, intent(in) :: Ntasks,Nfun,Nres
-      integer, intent(out) :: ierr
-      real(dp), intent(in) :: tasks(Nfun,Ntasks)
-      real(dp), intent(out) :: results(Nres,Ntasks)
-      character(len=*), optional, intent(in) :: fname
-      external :: func
-    end subroutine task_manager
-  end interface
-
-! Initialize MPI
+  ! Initialize MPI
   call MPI_INIT(ierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD,rank,ierr)
 
-! Make task list
-  call random_number(tasks)
+  ! Make task list
+  do i=1,Ntasks
+    tasks(1,i) = 1._dp/i
+    tasks(2,i) = i*i
+  enddo
 
-! Send to task manager
-  call task_manager(tasks,Ntasks,Nfun,Nres,sum_prod,results,ierr,"example.dat") ! Output to file
-  call task_manager(tasks,Ntasks,Nfun,Nres,sum_prod,results,ierr) ! Don't output to file
+  ! Use tasks as input to sum_prod routine and split among processes
+  call task_manager(Ntasks,Nfun,Nres,tasks,sum_prod,results,ierr)
 
-! Output results
+  ! Print the tasks and results
   if ( rank.eq.0 ) then
     output(1:Nfun,:) = tasks(:,:)
     output(Nfun+1:Nfun+Nres,:) = results(:,:)
@@ -71,11 +62,10 @@ program example
     write(6,'(4F20.10)') output
   end if
 
-! Finalize MPI
+  ! Finalize MPI
   call MPI_FINALIZE(ierr)
 
 contains
-! Define task
   subroutine sum_prod(Nfun,fun,Nres,res)
     integer, parameter :: dp=kind(0.d0)
     integer, intent(in) :: Nfun, Nres

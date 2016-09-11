@@ -1,11 +1,15 @@
 FC = mpifort
 FFLAGS = -O3 -g
+LAPACK = -llapack
 
-all : example.f90 task_manager.o
-	$(FC) $(FFLAGS) -o example.x example.f90 task_manager.o
+SRC = parallel_tasks.f90 example.f90
+OBJ = $(SRC:%.f90=%.o)
 
-task_manager.o : task_manager.f90
-	$(FC) $(FFLAGS) -c task_manager.f90
+example.x: $(OBJ)
+	$(FC) $(FFLAGS) $^ -o $@ $(LAPACK)
+
+$(OBJ): %.o: %.f90
+	$(FC) $(FFLAGS) -c $< -o $@
 
 clean:
-	rm -r *.o *.x.dSYM *.x
+	rm *.o *.x *.mod
